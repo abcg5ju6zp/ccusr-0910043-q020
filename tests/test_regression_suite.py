@@ -3,11 +3,13 @@
 from importlib import import_module
 
 
+cache = import_module("tests.cache")
 engine = import_module("tests.engine")
 parser = import_module("tests.parser")
 thread_safety = import_module("tests.thread_safety")
 
 
+CompiledRuleCacheTests = cache.CompiledRuleCacheTests
 EngineTests = engine.EngineTests
 EngineRuleTests = engine.EngineRuleTests
 EngineDatetimeRuleTests = engine.EngineDatetimeRuleTests

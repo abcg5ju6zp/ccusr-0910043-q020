@@ -144,6 +144,25 @@ class Builtins(collections.abc.Mapping):
     def __len__(self) -> int:
         return len(self.__values)
 
+    def _cache_fingerprint(self, fingerprint_callable, stable_key, fingerprint_timezone):
+        """返回参与编译缓存键的结构化指纹（不触发生成器取值）。"""
+        symbols = []
+        for name, value in self.__values.items():
+            type_def = self.__value_types.get(name, types.DataType.UNDEFINED)
+            if isinstance(value, collections.abc.Mapping):
+                value_key = self.__class__(
+                        value,
+                        namespace=(name if self.namespace is None else self.namespace + '.' + name),
+                        timezone=self.timezone,
+                        value_types=self.__value_types
+                )._cache_fingerprint(fingerprint_callable, stable_key, fingerprint_timezone)
+            elif callable(value):
+                value_key = fingerprint_callable(value)
+            else:
+                value_key = stable_key(value)
+            symbols.append((name, type_def.name, value_key))
+        return ('builtins', fingerprint_timezone(self.timezone), tuple(sorted(symbols, key=lambda item: item[0])))
+
     @classmethod
     def from_defaults(cls, values: Mapping[str, Any] | None = None, **kwargs: Any) -> 'Builtins':
         """项目内部接口说明。"""

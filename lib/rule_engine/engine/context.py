@@ -49,6 +49,7 @@ from ..suggestions import suggest_symbol
 from ..types import DataType, _DataTypeDef
 
 from ._attribute_resolver import _AttributeResolver
+from .cache import cache_key
 
 import dateutil.tz
 
@@ -175,11 +176,7 @@ class Context(object):
         """The *default_timezone* parameter from :py:meth:`~__init__`"""
         self.default_value = default_value
         """The *default_value* parameter from :py:meth:`~__init__`"""
-        self.builtins = builtins.Builtins.from_defaults(
-                values={'re_groups': builtins.BuiltinValueGenerator(functools.partial(_tls_getter, self._thread_local, 'regex_groups'))},
-                value_types={'re_groups': types.DataType.ARRAY(types.DataType.STRING)},
-                timezone=default_timezone
-        )
+        self.builtins = self._build_builtins()
         """An instance of :py:class:`~rule_engine.builtins.Builtins` to provided a default set of builtin symbol values."""
         self.decimal_context = decimal_context or decimal.getcontext()
         """The *decimal_context* parameter from :py:meth:`~__init__`"""
@@ -191,6 +188,57 @@ class Context(object):
         """The *mapping_attribute_lookup* parameter from :py:meth:`~__init__`."""
         self._mapping_fallback_lock = threading.Lock()
         self._mapping_fallback_warned = False
+
+    def _build_builtins(self) -> builtins.Builtins:
+        # re_groups 的取值器必须绑定到本实例自己的线程本地存储，
+        # 因此每个 Context（包括 clone）都要重建一份内置表。
+        getter = functools.partial(_tls_getter, self._thread_local, 'regex_groups')
+        # 该取值器的语义在所有 Context 上完全相同，赋予稳定的缓存身份，
+        # 使得仅在线程本地存储上不同的等价上下文仍能共享编译缓存。
+        getter = cache_key('context.re_groups')(getter)
+        return builtins.Builtins.from_defaults(
+                values={'re_groups': builtins.BuiltinValueGenerator(getter)},
+                value_types={'re_groups': types.DataType.ARRAY(types.DataType.STRING)},
+                timezone=self.default_timezone
+        )
+
+    def clone(self) -> 'Context':
+        """返回一个语义配置相同、但可变状态彼此隔离的副本。
+
+        副本拥有全新的线程本地存储、:py:attr:`symbols` 集合与内置取值器，
+        适用于“在隔离上下文里编译规则”的场景（例如编译缓存）：编译过程对
+        本上下文可变状态的写入不会回写到原实例。resolver / type_resolver /
+        时区 / decimal 上下文等语义配置与原实例共享（它们在编译/求值期间按
+        只读方式使用）。
+        """
+        clone = self.__class__.__new__(self.__class__)
+        clone.regex_flags = self.regex_flags
+        clone.symbols = set()
+        clone.default_timezone = self.default_timezone
+        clone.default_value = self.default_value
+        clone.decimal_context = self.decimal_context
+        clone._Context__type_resolver = self.__type_resolver  # type: ignore[attr-defined]
+        clone._Context__resolver = self.__resolver  # type: ignore[attr-defined]
+        clone.mapping_attribute_lookup = self.mapping_attribute_lookup
+        # 必须先建立线程本地存储，再构建绑定它的内置表。
+        clone._thread_local = threading.local()
+        clone.builtins = clone._build_builtins()
+        clone._mapping_fallback_lock = threading.Lock()
+        clone._mapping_fallback_warned = False
+        return clone
+
+    def _compile_fingerprint_inputs(self) -> dict[str, Any]:
+        """暴露参与编译缓存键的全部语义选项（供引擎内部的缓存管理器使用）。"""
+        return {
+                'regex_flags': self.regex_flags,
+                'mapping_attribute_lookup': self.mapping_attribute_lookup,
+                'default_timezone': self.default_timezone,
+                'default_value': self.default_value,
+                'decimal_context': self.decimal_context,
+                'resolver': self.__resolver,
+                'type_resolver': self.__type_resolver,
+                'builtins': self.builtins,
+        }
 
     def __getstate__(self) -> dict[str, Any]:
         return {
@@ -218,11 +266,7 @@ class Context(object):
         # recreate transient objects that can not be pickled
         self._thread_local = threading.local()
         self._mapping_fallback_lock = threading.Lock()
-        self.builtins = builtins.Builtins.from_defaults(
-                values={'re_groups': builtins.BuiltinValueGenerator(functools.partial(_tls_getter, self._thread_local, 'regex_groups'))},
-                value_types={'re_groups': types.DataType.ARRAY(types.DataType.STRING)},
-                timezone=self.default_timezone
-        )
+        self.builtins = self._build_builtins()
 
     @contextlib.contextmanager
     def assignments(self, *assignments: 'ast.Assignment') -> Iterator[None]:

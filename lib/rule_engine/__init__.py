@@ -37,8 +37,13 @@ from .engine import resolve_item
 from .engine import type_resolver_from_dataclass
 from .engine import type_resolver_from_dict
 from .engine import type_resolver_from_sqlalchemy
+from .engine import CacheConfig
+from .engine import CacheStats
+from .engine import CompiledRuleCache
+from .engine import CompileOptions
 from .engine import Context
 from .engine import Rule
+from .engine import cache_key
 
 from .errors import AttributeResolutionError
 from .errors import EngineError
@@ -50,6 +55,10 @@ from .types import DataType
 
 __all__ = (
     'AttributeResolutionError',
+    'CacheConfig',
+    'CacheStats',
+    'CompiledRuleCache',
+    'CompileOptions',
     'Context',
     'DataType',
     'EngineError',
@@ -57,6 +66,7 @@ __all__ = (
     'Rule',
     'RuleSyntaxError',
     'SymbolResolutionError',
+    'cache_key',
     'resolve_attribute',
     'resolve_item',
     'type_resolver_from_dataclass',

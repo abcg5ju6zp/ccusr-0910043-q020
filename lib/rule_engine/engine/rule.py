@@ -47,12 +47,14 @@ class Rule(object):
     The :py:class:`~rule_engine.parser.Parser` instance that will be used for parsing the rule text into a compatible
     用于规则求值的抽象语法树（AST）。
     """
-    def __init__(self, text: str, context: Context | None = None) -> None:
+    def __init__(self, text: str, context: Context | None = None, *, statement: Any = None) -> None:
         """项目内部接口说明。"""
         context = context or Context()
         self.text = text
         self.context = context
-        self.statement = self.parser.parse(text, context)
+        # 允许缓存管理器注入已经编译好的 AST；AST 一经发布即不可变，
+        # 可在多个租户隔离的缓存条目之外被多个调用方安全共享。
+        self.statement = statement if statement is not None else self.parser.parse(text, context)
 
     def __getstate__(self) -> dict[str, Any]:
         return {'text': self.text, 'context': self.context}
